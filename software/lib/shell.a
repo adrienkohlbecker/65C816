@@ -1,0 +1,60 @@
+; handle_keypress: parses a key press and display the result on the LCD
+; argument: A=keyboard keycode
+handle_keypress:
+    sta IO_1_DEBUG
+
+    cmp # $00 ; ignore non supported keys
+    beq .exit_handle_keypress
+
+    cmp # $1B ; escape
+    beq .clear_screen
+
+    cmp # $08 ; backspace
+    beq .backspace
+
+    cmp # $0a ; line feed
+    beq .line_feed
+
+    cmp # $11 ; DC1 mapped to left arrow
+    beq .left_arrow
+
+    jsr print_char
+
+.exit_handle_keypress:
+    rts
+
+.clear_screen:
+    lda # LCD_CMD_CLEAR_DISPLAY
+    jsr lcd_instruction
+
+    jmp .exit_handle_keypress
+
+.backspace:
+    lda # LCD_CMD_SHIFT_CURSOR_LEFT
+    jsr lcd_instruction
+
+    lda # $20 ; space
+    jsr print_char
+
+    lda # LCD_CMD_SHIFT_CURSOR_LEFT
+    jsr lcd_instruction
+
+    jmp .exit_handle_keypress
+
+
+.line_feed:
+    jsr lcd_read_address
+    bit #%01000000 ; check value of higher order addres bit; 1 means we're in the second line
+    bne .exit_line_feed ; if we're already on the second line, ignore; TODO: scroll the display?
+
+    lda # LCD_CMD_SET_DDRAM_ADDR | $40 ; set address to 40 = first char in second line
+    jsr lcd_instruction
+
+.exit_line_feed:
+    jmp .exit_handle_keypress
+
+.left_arrow:
+    lda # LCD_CMD_SHIFT_CURSOR_LEFT
+    jsr lcd_instruction
+
+    jmp .exit_handle_keypress

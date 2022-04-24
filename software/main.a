@@ -42,6 +42,63 @@
 !address IO_0_VIA_IER         = $7F8E ; Interrupe Enable Register
 !address IO_0_VIA_PORTA_NHDSK = $7F8F ; Output/Intput Register Port A but with no handshake
 
+!address IO_1_DEBUG           = $7F90 ; Debug port
+
+VIA_PCR_CA1_CONTROL = 0
+VIA_PCR_CA2_CONTROL = 1
+VIA_PCR_CB1_CONTROL = 4
+VIA_PCR_CB2_CONTROL = 5
+
+VIA_PCR_1_NEGATIVE_EDGE = 0
+VIA_PCR_1_POSITIVE_EDGE = 1
+VIA_PCR_2_NEGATIVE_EDGE = 000
+VIA_PCR_2_INDEPENDENT_NEGATIVE_EDGE = 001
+VIA_PCR_2_POSITIVE_EDGE = 010
+VIA_PCR_2_INDEPENDENT_POSITIVE_EDGE = 011
+VIA_PCR_2_HANDSHAKE_OUTPUT = 100
+VIA_PCR_2_PULSE_OUTPUT = 101
+VIA_PCR_2_LOW_OUTPUT = 110
+VIA_PCR_2_HIGH_OUTPUT = 110
+
+VIA_IR_CA2_ACTIVE_EDGE   = 1 <<< 0
+VIA_IR_CA1_ACTIVE_EDGE   = 1 <<< 1
+VIA_IR_COMPLETE_8_SHIFTS = 1 <<< 2
+VIA_IR_CB2_ACTIVE_EDGE   = 1 <<< 3
+VIA_IR_CB1_ACTIVE_EDGE   = 1 <<< 4
+VIA_IR_T2_TIMEOUT        = 1 <<< 5
+VIA_IR_T1_TIMEOUT        = 1 <<< 6
+VIA_IR_ANY_INTERRUPT     = 1 <<< 7
+
+VIA_PORT_A0        = 1 <<< 0
+VIA_PORT_A1        = 1 <<< 1
+VIA_PORT_A2        = 1 <<< 2
+VIA_PORT_A3_KBD_OK = 1 <<< 3
+VIA_PORT_A4_KBD_OE = 1 <<< 4
+VIA_PORT_A5_LCD_RS = 1 <<< 5
+VIA_PORT_A6_LCD_RW = 1 <<< 6
+VIA_PORT_A7_LCD_E  = 1 <<< 7
+
+VIA_PORT_B0_EXT0 = 1 <<< 0
+VIA_PORT_B1_EXT1 = 1 <<< 1
+VIA_PORT_B2_EXT2 = 1 <<< 2
+VIA_PORT_B3_EXT3 = 1 <<< 3
+VIA_PORT_B4_EXT4 = 1 <<< 4
+VIA_PORT_B5_EXT5 = 1 <<< 5
+VIA_PORT_B6_EXT6 = 1 <<< 6
+VIA_PORT_B7_EXT7 = 1 <<< 7
+
+VIA_DDRA_DEFAULT = (VIA_PORT_A4_KBD_OE | VIA_PORT_A5_LCD_RS | VIA_PORT_A6_LCD_RW | VIA_PORT_A7_LCD_E)
+VIA_DDRB_DEFAULT = $00 ; all inputs
+
+; zero page locations
+!address kb_wptr          = $00 ; 1 byte
+!address kb_rptr          = $01 ; 1 byte
+!address kb_flags         = $02 ; 1 byte
+!address kb_deadkey_flags = $03 ; 1 byte
+
+; memory locations
+!address kb_buffer = $0200 ; 256-byte keyboard buffer 0200-02ff
+
 *=$8000
 main:
   ; put CPU in native mode
@@ -52,90 +109,143 @@ main:
   ldx #$ff
   txs
 
-  ; set registers to 16 bits (Set bits m and x to 0 in CPU status register)
-  rep #%00110000
-  !rl
-  !al
+  ; select 8 bit registers
+  sep #%00110000
+  !rs
+  !as
 
-  ; set port A and B to output
-  lda #$ffff
+  ; enable interrupt on CB1
+  lda # VIA_IR_ANY_INTERRUPT | VIA_IR_CB1_ACTIVE_EDGE
+  sta IO_0_VIA_IER
+
+  ; Set CB1 to positive going edge
+  lda # VIA_PCR_1_POSITIVE_EDGE <<< VIA_PCR_CB1_CONTROL
+  sta IO_0_VIA_PCR
+
+  ; ensure external ports are 0
+  stz IO_0_VIA_PORTA
+  stz IO_0_VIA_PORTB
+
+  ; Set PORTA to default output mode
+  lda # VIA_DDRA_DEFAULT
+  sta IO_0_VIA_DDRA
+
+  ; Set PORTB to default output mode
+  lda # VIA_DDRB_DEFAULT
   sta IO_0_VIA_DDRB
 
-  ; set port A and B to 5555
-  lda #$5555
-  sta IO_0_VIA_PORTB
+  jsr lcd_init
 
-; ### Test bank0 RAM
+  ; initialize memory locations with 0
+  stz kb_wptr
+  stz kb_rptr
+  stz kb_flags
+  stz kb_deadkey_flags
 
-restart:
-  ; load into X the address of the end of RAM
-  ldx #$7f7f
-  dex ; align to 16 bits
+  ; enable interrupt handling
+  cli
 
 loop:
-   ; store 16 bits of data at X and X+1 and verify we read the same thing
-  txa
-  sta $0,X ; direct page indexed
-  cmp $0,X
-  bne fail
+    sei         ; write pointer is set in interrupt, briefly disable interrupts while we read it
+    lda kb_rptr
+    cmp kb_wptr
+    cli         ; re-enable interrupts
+    beq loop  ; if the two pointers are equal, no key has been pressed
 
-  ; decrement address
-  dex
-  dex
+    ldx kb_rptr
+    lda kb_buffer, x ; this works as long as there hasn't been 256 key presses before it gets to it
+    jsr handle_keypress
+    inc kb_rptr
+    jmp loop
 
-  ; continue until X=0
-  bne loop
+irq:
+    ; push data bank register and direct page register
+    phb
+    phd
+    ; we dont know which mode the CPU was in before IRQ. Assume 16 bits and save 16 bits of registers
+    rep #%00110000
+    !rl
+    !al
+    pha
+    phx
+    phy
+    ; Go back to 8 bit for the IRQ routine
+    sep #%00110000
+    !rs
+    !as
 
-; ### Test extended RAM
+    stz IO_0_VIA_DDRB ; PORT B is input
 
-  ldy #$8 ; store bank number 8 into Y
+    ; Get current control signals
+    lda IO_0_VIA_PORTA
 
-loop_dbr:
-  ; set indexes to 8 bits
-  sep #%00010000
-	!rs
+    ora # VIA_PORT_A4_KBD_OE ; Enable shift register output
+    sta IO_0_VIA_PORTA
 
-  phy
-  ldy #0
-  phy
-  plb
+    ldx IO_0_VIA_PORTB ; read scan code into X register
+    phx
 
-  ror IO_0_VIA_PORTB
+    ldx IO_0_VIA_PORTA ; read if the packet is valid
+    phx
 
-  ply
-  phy
-  plb ; pull value into Data Bank Register, effectively changing bank for all data accesses
+    and # $ff & !VIA_PORT_A4_KBD_OE ; disable shift register output
+    sta IO_0_VIA_PORTA
 
-  ; set indexes to 16 bits
-  rep #%00010000
-	!rl
+    pla
+    and # VIA_PORT_A3_KBD_OK
+    beq invalid_packet
 
-  ldx #$ffff
-  dex ; align to 16 bits
+    pla
+    jsr handle_keycode
+    jmp exit_irq
 
-loop_ext:
-   ; store 16 bits of data at X and X+1 and verify we read the same thing
-  txa
-  sta $0000,X ; absolute indexed
-  cmp $0000,X
-  bne fail
+invalid_packet:
+    pla ; get scancode from stack
+    lda #$a4 ; write ¤ to signify an invalid packet was received
+    jsr push_key
+    jmp exit_irq
 
-  ; decrement address
-  dex
-  dex
+exit_irq:
+    ; we saved registers in 16 bit mode. Switch back to 16 bits for the restore
+    rep #%00110000
+    !rl {
+    !al {
+    ply
+    plx
+    pla
+    pld
+    plb
+    rti
+    ; note: We don't want code sitting after this to be assembled in a different mode so we use block syntax
+    ; remember that !rl and !al only apply to these instructions.
+    ; After rti the CPU M/X flags will be restored to whatever state it was in before the IRQ
+    ;
+    }
+    }
 
-  ; continue until X=0
-  bne loop_ext
+!source "lib/lcd.a"
+!source "lib/keyboard.a"
+!source "lib/shell.a"
+!source "lib/binhex.a"
 
-  ; increment Y
-  iny
-  cpy #$10
-  bne loop_dbr
-  jmp restart
+exit_rti:
+  rti
 
-fail:
-  wai
-
-*=$fffc
-  !word main
-  !word $eaea
+; Vector locations
+*=$ffe0
+  !word $eaea    ; (reserved)
+  !word $eaea    ; (reserved)
+  !word exit_rti ; native, cop
+  !word exit_rti ; native, brk
+  !word exit_rti ; native, abort
+  !word exit_rti ; native, nmi
+  !word $eaea    ; (reserved)
+  !word irq      ; native, irq
+  !word $eaea    ; (reserved)
+  !word $eaea    ; (reserved)
+  !word exit_rti ; emulation, cop
+  !word $eaea    ; (reserved)
+  !word exit_rti ; emulation, abort
+  !word exit_rti ; emulation, nmi
+  !word main     ; emulation, reset
+  !word exit_rti ; emulation, irq

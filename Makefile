@@ -1,4 +1,5 @@
 default:
+	( cd software/layout; ./make.sh)
 	( cd software; acme --color --report report.txt --strict-segments -v -Wtype-mismatch main.a )
 	cat software/report.txt
 
