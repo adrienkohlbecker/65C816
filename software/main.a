@@ -60,44 +60,38 @@ VIA_PCR_2_PULSE_OUTPUT = 101
 VIA_PCR_2_LOW_OUTPUT = 110
 VIA_PCR_2_HIGH_OUTPUT = 110
 
-VIA_IR_CA2_ACTIVE_EDGE   = 1 <<< 0
-VIA_IR_CA1_ACTIVE_EDGE   = 1 <<< 1
-VIA_IR_COMPLETE_8_SHIFTS = 1 <<< 2
-VIA_IR_CB2_ACTIVE_EDGE   = 1 <<< 3
-VIA_IR_CB1_ACTIVE_EDGE   = 1 <<< 4
-VIA_IR_T2_TIMEOUT        = 1 <<< 5
-VIA_IR_T1_TIMEOUT        = 1 <<< 6
-VIA_IR_ANY_INTERRUPT     = 1 <<< 7
+VIA_IR_CA2_ACTIVE_EDGE   = 1 << 0
+VIA_IR_CA1_ACTIVE_EDGE   = 1 << 1
+VIA_IR_COMPLETE_8_SHIFTS = 1 << 2
+VIA_IR_CB2_ACTIVE_EDGE   = 1 << 3
+VIA_IR_CB1_ACTIVE_EDGE   = 1 << 4
+VIA_IR_T2_TIMEOUT        = 1 << 5
+VIA_IR_T1_TIMEOUT        = 1 << 6
+VIA_IR_ANY_INTERRUPT     = 1 << 7
 
-VIA_PORT_A0        = 1 <<< 0
-VIA_PORT_A1        = 1 <<< 1
-VIA_PORT_A2        = 1 <<< 2
-VIA_PORT_A3_KBD_OK = 1 <<< 3
-VIA_PORT_A4_KBD_OE = 1 <<< 4
-VIA_PORT_A5_LCD_RS = 1 <<< 5
-VIA_PORT_A6_LCD_RW = 1 <<< 6
-VIA_PORT_A7_LCD_E  = 1 <<< 7
+VIA_PORT_A0        = 1 << 0
+VIA_PORT_A1        = 1 << 1
+VIA_PORT_A2        = 1 << 2
+VIA_PORT_A3_KBD_OK = 1 << 3
+VIA_PORT_A4_KBD_OE = 1 << 4
+VIA_PORT_A5_LCD_RS = 1 << 5
+VIA_PORT_A6_LCD_RW = 1 << 6
+VIA_PORT_A7_LCD_E  = 1 << 7
 
-VIA_PORT_B0_EXT0 = 1 <<< 0
-VIA_PORT_B1_EXT1 = 1 <<< 1
-VIA_PORT_B2_EXT2 = 1 <<< 2
-VIA_PORT_B3_EXT3 = 1 <<< 3
-VIA_PORT_B4_EXT4 = 1 <<< 4
-VIA_PORT_B5_EXT5 = 1 <<< 5
-VIA_PORT_B6_EXT6 = 1 <<< 6
-VIA_PORT_B7_EXT7 = 1 <<< 7
+VIA_PORT_B0_EXT0 = 1 << 0
+VIA_PORT_B1_EXT1 = 1 << 1
+VIA_PORT_B2_EXT2 = 1 << 2
+VIA_PORT_B3_EXT3 = 1 << 3
+VIA_PORT_B4_EXT4 = 1 << 4
+VIA_PORT_B5_EXT5 = 1 << 5
+VIA_PORT_B6_EXT6 = 1 << 6
+VIA_PORT_B7_EXT7 = 1 << 7
 
 VIA_DDRA_DEFAULT = (VIA_PORT_A4_KBD_OE | VIA_PORT_A5_LCD_RS | VIA_PORT_A6_LCD_RW | VIA_PORT_A7_LCD_E)
 VIA_DDRB_DEFAULT = $00 ; all inputs
 
 ; zero page locations
-!address kb_wptr          = $00 ; 1 byte
-!address kb_rptr          = $01 ; 1 byte
-!address kb_flags         = $02 ; 1 byte
 !address kb_deadkey_flags = $03 ; 1 byte
-
-; memory locations
-!address kb_buffer = $0200 ; 256-byte keyboard buffer 0200-02ff
 
 *=$8000
 main:
@@ -119,7 +113,7 @@ main:
   sta IO_0_VIA_IER
 
   ; Set CB1 to positive going edge
-  lda # VIA_PCR_1_POSITIVE_EDGE <<< VIA_PCR_CB1_CONTROL
+  lda # VIA_PCR_1_POSITIVE_EDGE << VIA_PCR_CB1_CONTROL
   sta IO_0_VIA_PCR
 
   ; ensure external ports are 0
@@ -135,27 +129,14 @@ main:
   sta IO_0_VIA_DDRB
 
   jsr lcd_init
-
-  ; initialize memory locations with 0
-  stz kb_wptr
-  stz kb_rptr
-  stz kb_flags
-  stz kb_deadkey_flags
+  jsr kbd_init
 
   ; enable interrupt handling
   cli
 
 loop:
-    sei         ; write pointer is set in interrupt, briefly disable interrupts while we read it
-    lda kb_rptr
-    cmp kb_wptr
-    cli         ; re-enable interrupts
-    beq loop  ; if the two pointers are equal, no key has been pressed
+    jsr kbd_process_buffer
 
-    ldx kb_rptr
-    lda kb_buffer, x ; this works as long as there hasn't been 256 scancodes before it gets to it
-    jsr handle_scancode
-    inc kb_rptr
     jmp loop
 
 irq:
@@ -201,8 +182,9 @@ irq:
     }
     }
 
+!source "lib/macros.a"
 !source "lib/lcd.a"
-!source "lib/keyboard.a"
+!source "lib/kbd.a"
 !source "lib/shell.a"
 !source "lib/binhex.a"
 

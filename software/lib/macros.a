@@ -1,0 +1,18 @@
+!set zero_page_pointer = $0             ; pointer to next available zero page address
+!set gp_memory_pointer = $0200          ; pointer to next available general purpose memory address
+
+; alloc_zp: allocate a given amount of bytes on the zero page
+;
+; use: +alloc_zp foo, 2 ; sets label of foo to the first available zero page address, and reserve 2 bytes
+!macro alloc_zp ~.address, .amount {
+    !address .address = $ff & zero_page_pointer
+    !set zero_page_pointer = zero_page_pointer + .amount
+}
+
+; alloc_mem: allocate a given amount of bytes in general purpose memory
+;
+; use: +alloc_mem foo, 2 ; sets label of foo to the first available memory address, and reserve 2 bytes
+!macro alloc_mem ~.address, .amount {
+    !address .address = gp_memory_pointer
+    !set gp_memory_pointer = gp_memory_pointer + .amount
+}

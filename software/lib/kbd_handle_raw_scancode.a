@@ -1,0 +1,90 @@
+; kbd_handle_raw_scancode: translate scancodes sent by the keyboard from Set 2 to Set 3. Forwards it to kbd_handle_scancode
+; argument: A=incoming scancode
+kbd_handle_raw_scancode:
+    tax                                 ; load kb_flags into A, scancode into X
+    lda kb_flags
+
+    cpx # KBD_SCANCODE_BAT_COMPLETED_AA ; if the scan code is  BAT (Basic Assurance Test) OK
+    beq .exit                           ; ignore it
+
+    cpx # KBD_SCANCODE_RELEASE_F0       ; if the scan code is key release
+    bne +
+    ora # KBD_FLAG_RELEASE              ; set release flag
+    jmp .exit
+
+    ; note: Shift+Keypad_Slash will send E0 F0 12 and E0 12 (akin to the user first releasing shift, then pressing it
+    ;       again after Keypad_Slash, but with an escaped scancode). This code lets this case fall through as a regular
+    ;       shift key release and press, so downstream code can ignore this quirk.
+    ;       Similarly, pressing PrintScr without shift will send E0 12 and E0 F0 12 (akin to the user pressing Shift+PrintScr).
+    ;       This code lets this case fall through as a regular shift press and release.
+
++   cpx # KBD_SCANCODE_ESCAPE_E0        ; if the scan code is escaped key
+    bne +
+    ora # KBD_FLAG_ESCAPED              ; set escaped flag
+    jmp .exit
+
++   cpx # KBD_SCANCODE_PAUSE_E1         ; is this the start of the Pause key-press
+    bne +
+    ora # KBD_FLAG_PAUSE_STARTED        ; set pause started flag
+    jmp .exit
+
++   bit # KBD_FLAG_PAUSE_STARTED        ; are we in a Pause sequence
+    beq +                               ; if not skip the following
+
+    and # $ff & !KBD_FLAG_PAUSE_STARTED ; reset the flag
+
+    cpx # KBD_SCANCODE_PAUSE_14         ; is this the second scancode in the Pause sequence
+    bne ++                              ; if not, there must be an error. exit.
+    ora # KBD_FLAG_PAUSE_CONFIRMED      ; set second flag in the sequence
+
+++  jmp .exit
+
++   bit # KBD_FLAG_PAUSE_CONFIRMED      ; are we in a Pause sequence (step 2)
+    beq +                               ; if not skip the following
+
+    and # $ff & !KBD_FLAG_PAUSE_CONFIRMED ; reset the flag
+
+    cpx # KBD_SCANCODE_PAUSE_77         ; is this the third scancode in the Pause sequence
+    bne ++                              ; if not, there must be an error. exit.
+    ldx # KBD_SCANCODE_SET3_PAUSE_62    ; set X to translated scancode for Pause
+    jmp .output_scancode
+
+++  jmp .exit
+
+
++   bit # KBD_FLAG_ESCAPED              ; is this an escaped key
+    beq +                               ; if not skip the following
+
+    and # $ff & !KBD_FLAG_ESCAPED       ; unset KBD_FLAG_ESCAPED flag
+    pha
+    txa
+    jsr translate_escaped_2_to_3        ; note this only uses X and returns in X
+    tax
+    pla
+    jmp .output_scancode
+
++   pha
+    txa
+    jsr translate_regular_2_to_3        ; note this only uses X and returns in X
+    tax
+    pla
+
+.output_scancode:
+    bit # KBD_FLAG_RELEASE              ; if releasing a key (we received 0xf0 previously)
+    beq +                               ; if not skip the following
+
+    and # $ff & !KBD_FLAG_RELEASE       ; unset KBD_FLAG_RELEASE flag
+    pha                                 ; save flags
+    txa
+    jsr kbd_handle_key_release
+    pla                                 ; restore flags
+    jmp .exit
+
++   pha                                 ; save flags
+    txa
+    jsr kbd_handle_key_press
+    pla                                 ; restore flags
+
+.exit:
+    sta kb_flags
+    rts

@@ -1,0 +1,171 @@
+.regular_2_to_3
+    !byte $58 ; caps lock
+    !byte $14
+
+    !byte $5d ; backslash
+    !byte $53
+
+    !byte $61 ; ISO next to left shift
+    !byte $13
+
+    !byte $14 ; Left CTRL
+    !byte $11
+
+    !byte $11 ; Left ALT
+    !byte $19
+
+    !byte $77 ; Num Lock
+    !byte $76
+
+    !byte $7c ; Keypad asterisk
+    !byte $7e
+
+    !byte $7b ; Keypad minus
+    !byte $84
+
+    !byte $79 ; Keypad plus
+    !byte $7c
+
+    !byte $76 ; Escape
+    !byte $08
+
+    !byte $05 ; F1
+    !byte $07
+
+    !byte $06 ; F2
+    !byte $0f
+
+    !byte $04 ; F3
+    !byte $17
+
+    !byte $04 ; F3
+    !byte $17
+
+    !byte $0c ; F4
+    !byte $1f
+
+    !byte $03 ; F5
+    !byte $27
+
+    !byte $0b ; F6
+    !byte $2f
+
+    !byte $83 ; F7
+    !byte $37
+
+    !byte $0a ; F8
+    !byte $3f
+
+    !byte $01 ; F9
+    !byte $47
+
+    !byte $09 ; F10
+    !byte $4f
+
+    !byte $78 ; F11
+    !byte $56
+
+    !byte $07 ; F12
+    !byte $5e
+
+    !byte $84 ; SysReq = Alt+PrintScr
+    !byte $57
+
+    !byte $7e ; Scroll Lock
+    !byte $5f
+
+    !byte $00
+
+.escaped_2_to_3:
+    !byte $1f ; left OS
+    !byte $8b
+
+    !byte $11 ; right alt
+    !byte $39
+
+    !byte $27 ; right 0S
+    !byte $8c
+
+    !byte $2f ; menu
+    !byte $8d
+
+    !byte $14 ; right ctrl
+    !byte $58
+
+    !byte $70 ; insert
+    !byte $67
+
+    !byte $71 ; delete
+    !byte $64
+
+    !byte $6b ; left arrow
+    !byte $61
+
+    !byte $6c ; home
+    !byte $6e
+
+    !byte $69 ; end
+    !byte $65
+
+    !byte $75 ; up arrow
+    !byte $63
+
+    !byte $72 ; down arrow
+    !byte $60
+
+    !byte $7d ; page up
+    !byte $6f
+
+    !byte $7a ; page down
+    !byte $6d
+
+    !byte $74 ; right arrow
+    !byte $6a
+
+    ; note: keypad slash is weird. If shift is being held on press, the keyboard will first send a
+    ; key release scancode for shift (as if the user had released shift, even though it is being pressed)
+    ; then it will send the sequence for slash (4A F0 4A), and then it will re-send the make code for shift
+    ; as if the user had pressed shift again (even though he didn't release it during this sequence)
+    !byte $4a ; keypad slash
+    !byte $77
+
+    !byte $5a ; Keypad enter
+    !byte $79
+
+    !byte $7e ; Break
+    !byte $62
+
+    !byte $7c ; Ctrl+PrintScr, Shift+PrintScr
+    !byte $57
+
+    !byte $00
+
+; translate_regular_2_to_3: translate any non-escaped scancode from set 2 to set 3
+; argument A=scancode
+; returns A=translated scancode
+translate_regular_2_to_3:
+    ldx # $0 ; start at 0
+-   cmp .regular_2_to_3, x      ; compare scancode with key at index X
+    beq +                       ; if equal, we found a translation
+    inx                         ; otherwise increment index twice to move to next item
+    inx
+    ldy .regular_2_to_3, x      ; check to see if that new location is zero
+    beq ++                      ; if it is, we reached the end of the map, return from subroutine. A hasn't been modified
+    jmp -                       ; if it is not, go to the start of the loop again
++   lda .regular_2_to_3 + 1, x  ; if we found a translation, load the new value
+++  rts
+
+; translate_extended_2_to_3: translate any escaped scancode from set 2 to set 3
+; argument X=scancode
+; returns X=translated scancode
+translate_escaped_2_to_3:
+    ldx # $0 ; start at 0
+-   cmp .escaped_2_to_3, x      ; compare scancode with key at index X
+    beq +                       ; if equal, we found a translation
+    inx                         ; otherwise increment index twice to move to next item
+    inx
+    ldy .escaped_2_to_3, x      ; check to see if that new location is zero
+    beq ++                      ; if it is, we reached the end of the map, return from subroutine. A hasn't been modified
+    jmp -                       ; if it is not, go to the start of the loop again
++   lda .escaped_2_to_3 + 1, x  ; if we found a translation, load the new value
+++  rts

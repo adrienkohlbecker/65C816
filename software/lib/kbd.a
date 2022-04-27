@@ -1,0 +1,37 @@
+!zone lib_kbd {
+
++alloc_zp  ~kb_rptr,   1
++alloc_zp  ~kb_wptr,   1
++alloc_zp  ~kb_flags,  1
++alloc_mem ~kb_buffer, 256
+
+; kb flags
+KBD_FLAG_RELEASE         = 1 << 0
+KBD_FLAG_ESCAPED         = 1 << 1
+KBD_FLAG_PAUSE_STARTED   = 1 << 2
+KBD_FLAG_PAUSE_CONFIRMED = 1 << 3
+
+; custom scancodes
+KBD_SCANCODE_BAT_COMPLETED_AA = $aa
+KBD_SCANCODE_KEY_ERROR_00     = $00
+KBD_SCANCODE_RELEASE_F0       = $f0
+KBD_SCANCODE_ESCAPE_E0        = $e0
+KBD_SCANCODE_PAUSE_E1         = $e1
+KBD_SCANCODE_PAUSE_14         = $14
+KBD_SCANCODE_PAUSE_77         = $77
+KBD_SCANCODE_SET3_PAUSE_62    = $62
+
+!source "lib/kbd_buffer.a"
+!source "lib/kbd_handle_raw_scancode.a"
+!source "lib/kbd_handle_keys.a"
+!source "lib/kbd_set_translation.a"
+
+kbd_init:
+  ; initialize memory locations with 0
+  stz kb_wptr
+  stz kb_rptr
+  stz kb_flags
+  stz kb_deadkey_flags
+  rts
+
+}

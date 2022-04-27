@@ -1,0 +1,47 @@
+; kbd_interrupt: reads a single scancode from the PS/2 interface connected to the VIA, and stores it in the keyboard buffer
+;                assumes it is executed withing an interrupt and won't be further interrupted
+; returns: void
+kbd_interrupt:
+    stz IO_0_VIA_DDRB                   ; PORT B is input
+
+    lda IO_0_VIA_PORTA                  ; Get current control signals
+    pha
+
+    ora # VIA_PORT_A4_KBD_OE            ; Enable shift register output
+    sta IO_0_VIA_PORTA
+
+    ldx IO_0_VIA_PORTB                  ; read scan code into X register
+
+    and # $ff & !VIA_PORT_A4_KBD_OE     ; disable shift register output
+    sta IO_0_VIA_PORTA
+
+    pla                                 ; restore value of control signals
+    and # VIA_PORT_A3_KBD_OK            ; if packet is OK
+    // todo: this does not work. timing?
+    // bne +                               ; skip what follows
+    // ldx # KBD_SCANCODE_KEY_ERROR_00     ; if not, signify an invalid packet was received and continue
+
++   txa                                 ; write scancode in the buffer at offset kb_wptr
+    ldx kb_wptr
+    sta kb_buffer, x
+    inc kb_wptr                         ; increment write pointer
+    rts
+
+; kbd_process_buffer: Processes the keyboard buffer until the read and write pointers are equal.
+;                     Calls kbd_handle_raw_scancode with each scancode
+;                     Will temporarily disable interrupts (if previously enabled) to avoid a race with the buffer pointers
+kbd_process_buffer:
+    php                                 ; write pointer is set in interrupt, briefly disable interrupts while we read it
+    sei
+    lda kb_wptr
+    plp                                 ; restore interrupt state
+
+    cmp kb_rptr
+    beq +                               ; if the two pointers are equal, no key has been pressed, return
+
+    ldx kb_rptr
+    lda kb_buffer, x                    ; this works as long as there hasn't been 256 scancodes before it gets to it
+    jsr kbd_handle_raw_scancode
+    inc kb_rptr
+
++   rts

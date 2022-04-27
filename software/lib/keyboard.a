@@ -13,17 +13,17 @@ keymap_grave_accent: !binary "layout/keys_grave_accent_unshifted.bin"
 keymap_grave_accent_shifted: !binary "layout/keys_grave_accent_shifted.bin"
 
 ; kb flags
-RELEASE     = 1 <<< 0
-EXTENDED    = 1 <<< 1
-SHIFT_LEFT  = 1 <<< 2
-SHIFT_RIGHT = 1 <<< 3
-ALTGR       = 1 <<< 4
+RELEASE     = 1 << 0
+EXTENDED    = 1 << 1
+SHIFT_LEFT  = 1 << 2
+SHIFT_RIGHT = 1 << 3
+ALTGR       = 1 << 4
 
 ; deadkeys
-CIRCUMFLEX   = 1 <<< 0
-DIAERESIS    = 1 <<< 1
-TILDE        = 1 <<< 2
-GRAVE_ACCENT = 1 <<< 3
+CIRCUMFLEX   = 1 << 0
+DIAERESIS    = 1 << 1
+TILDE        = 1 << 2
+GRAVE_ACCENT = 1 << 3
 
 ; custom scancodes
 SCANCODE_BAT            = $aa

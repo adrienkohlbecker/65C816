@@ -1,0 +1,25 @@
+; kbd_handle_key_press: maintains the keyboard state machine, with modifier keys, dead keys, and translates key presses
+;                      to printable characters
+; argument: A=incoming scancode
+kbd_handle_key_press:
+    pha
+    jsr binhex
+    jsr print_char
+    xba
+    jsr print_char
+    pla
+
+    rts
+
+; kbd_handle_key_release: maintains the keyboard state machine, with modifier keys, dead keys, and translates key presses
+;                      to printable characters
+; argument: A=incoming scancode
+kbd_handle_key_release:
+    pha
+    jsr binhex
+    jsr print_char
+    xba
+    jsr print_char
+    pla
+
+    rts
