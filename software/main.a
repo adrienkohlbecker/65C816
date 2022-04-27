@@ -153,8 +153,8 @@ loop:
     beq loop  ; if the two pointers are equal, no key has been pressed
 
     ldx kb_rptr
-    lda kb_buffer, x ; this works as long as there hasn't been 256 key presses before it gets to it
-    jsr handle_keypress
+    lda kb_buffer, x ; this works as long as there hasn't been 256 scancodes before it gets to it
+    jsr handle_scancode
     inc kb_rptr
     jmp loop
 
@@ -174,38 +174,16 @@ irq:
     !rs
     !as
 
-    stz IO_0_VIA_DDRB ; PORT B is input
+    lda IO_0_VIA_IFR
 
-    ; Get current control signals
-    lda IO_0_VIA_PORTA
+    bit # VIA_IR_ANY_INTERRUPT
+    beq .exit_irq
 
-    ora # VIA_PORT_A4_KBD_OE ; Enable shift register output
-    sta IO_0_VIA_PORTA
+    bit # VIA_IR_CB1_ACTIVE_EDGE
+    beq .exit_irq
+    jsr kbd_interrupt
 
-    ldx IO_0_VIA_PORTB ; read scan code into X register
-    phx
-
-    ldx IO_0_VIA_PORTA ; read if the packet is valid
-    phx
-
-    and # $ff & !VIA_PORT_A4_KBD_OE ; disable shift register output
-    sta IO_0_VIA_PORTA
-
-    pla
-    and # VIA_PORT_A3_KBD_OK
-    beq invalid_packet
-
-    pla
-    jsr handle_keycode
-    jmp exit_irq
-
-invalid_packet:
-    pla ; get scancode from stack
-    lda #$a4 ; write ¤ to signify an invalid packet was received
-    jsr push_key
-    jmp exit_irq
-
-exit_irq:
+.exit_irq:
     ; we saved registers in 16 bit mode. Switch back to 16 bits for the restore
     rep #%00110000
     !rl {

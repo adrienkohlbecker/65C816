@@ -25,25 +25,67 @@ DIAERESIS    = 1 <<< 1
 TILDE        = 1 <<< 2
 GRAVE_ACCENT = 1 <<< 3
 
-; push_key: store keycode in the memory buffer
-; argument: A=keycode
+; custom scancodes
+SCANCODE_BAT            = $aa
+SCANCODE_PACKET_INVALID = $a4
+
+; push_key: store scancode in the memory buffer
+; argument: A=scancode
 push_key:
     ldx kb_wptr    ; write scancode in the buffer at offset kb_wptr
     sta kb_buffer, x
     inc kb_wptr    ; increment pointer
     rts
 
-; handle_keycode: update internal keyboard state machine and process keys
-; argument: A=keycode
-handle_keycode:
-    ; load kb_flags into A, kb_deadkey_flags into B, keycode into X
+kbd_interrupt:
+    stz IO_0_VIA_DDRB ; PORT B is input
+
+    ; Get current control signals
+    lda IO_0_VIA_PORTA
+    pha
+
+    ora # VIA_PORT_A4_KBD_OE ; Enable shift register output
+    sta IO_0_VIA_PORTA
+
+    ldx IO_0_VIA_PORTB ; read scan code into X register
+
+    and # $ff & !VIA_PORT_A4_KBD_OE ; disable shift register output
+    sta IO_0_VIA_PORTA
+
+    pla
+    ; and # VIA_PORT_A3_KBD_OK
+    ; beq invalid_packet
+
+    txa
+    jsr push_key
+    rts
+
+invalid_packet:
+    lda # SCANCODE_PACKET_INVALID ; signify an invalid packet was received
+    jsr push_key
+    rts
+
+; handle_scancode: update internal keyboard state machine and process keys
+; argument: A=scancode
+handle_scancode:
+    ; pha
+    ; jsr binhex
+    ; jsr print_char
+    ; xba
+    ; jsr print_char
+    ; pla
+
+    ; load kb_flags into A, kb_deadkey_flags into B, scancode into X
     tax
     lda kb_deadkey_flags
     xba
     lda kb_flags
 
-    cpx #$aa              ; if the scan code is  BAT (Basic Assurance Test) OK  https://www.win.tue.nl/~aeb/linux/kbd/scancodes-1.html#ss1.2
-    beq .exit_handle_keycode    ; ignore it
+    cpx # SCANCODE_BAT           ; if the scan code is  BAT (Basic Assurance Test) OK  https://www.win.tue.nl/~aeb/linux/kbd/scancodes-1.html#ss1.2
+    beq .exit_handle_scancode    ; ignore it
+
+    cpx # SCANCODE_PACKET_INVALID
+    beq .packet_error
 
     ; if releasing a key
     bit # RELEASE
@@ -51,12 +93,24 @@ handle_keycode:
 
     jmp .pressing_key
 
-.exit_handle_keycode:
+.exit_handle_scancode:
     sta kb_flags
     xba
     sta kb_deadkey_flags
 
     rts
+
+.packet_error:
+    pha
+    xba
+    pha
+
+    lda #$a4 ; ¤ char
+    jsr handle_keypress
+
+    pla
+    xba
+    pla
 
 .releasing_key:
     and # $ff & !RELEASE
@@ -69,7 +123,7 @@ handle_keycode:
     cpx #$59
     beq .releasing_shift_right
 
-    jmp .exit_handle_keycode
+    jmp .exit_handle_scancode
 
 .releasing_extended_key
     and # $ff & !EXTENDED
@@ -77,22 +131,22 @@ handle_keycode:
     cpx #$11 ; right alt (alt-gr)
     beq .releasing_alt_gr
 
-    jmp .exit_handle_keycode
+    jmp .exit_handle_scancode
 
 .releasing_alt_gr
     and # $ff & !ALTGR
 
-    jmp .exit_handle_keycode
+    jmp .exit_handle_scancode
 
 .releasing_shift_left:
     and # $ff & !SHIFT_LEFT
 
-    jmp .exit_handle_keycode
+    jmp .exit_handle_scancode
 
 .releasing_shift_right:
     and # $ff & !SHIFT_RIGHT
 
-    jmp .exit_handle_keycode
+    jmp .exit_handle_scancode
 
 .pressing_key:
     cpx #$f0              ; if the scan code is key release
@@ -119,22 +173,22 @@ handle_keycode:
 .set_release_flag:
     ora # RELEASE
 
-    jmp .exit_handle_keycode
+    jmp .exit_handle_scancode
 
 .set_extended_flag:
     ora # EXTENDED
 
-    jmp .exit_handle_keycode
+    jmp .exit_handle_scancode
 
 .pressing_shift_left:
     ora # SHIFT_LEFT
 
-    jmp .exit_handle_keycode
+    jmp .exit_handle_scancode
 
 .pressing_shift_right:
     ora # SHIFT_RIGHT
 
-    jmp .exit_handle_keycode
+    jmp .exit_handle_scancode
 
 .pressing_extended_key:
     and # $ff & !EXTENDED
@@ -142,11 +196,11 @@ handle_keycode:
     cpx #$11 ; right alt (alt-gr)
     beq .pressing_alt_gr
 
-    jmp .exit_handle_keycode
+    jmp .exit_handle_scancode
 
 .pressing_alt_gr
     ora # ALTGR
-    jmp .exit_handle_keycode
+    jmp .exit_handle_scancode
 
 .pressing_circumflex:
     bit # SHIFT_LEFT
@@ -160,15 +214,15 @@ handle_keycode:
     pha
 
     lda #$5e ; ^ char
-    jsr push_key
+    jsr handle_keypress
     lda #$11 ; DC1 mapped to left arrow
-    jsr push_key
+    jsr handle_keypress
 
     pla
     xba
     pla
 
-    jmp .exit_handle_keycode
+    jmp .exit_handle_scancode
 
 .pressing_diaeresis:
     pha
@@ -177,15 +231,15 @@ handle_keycode:
     pha
 
     lda #$a8 ; ¨ char
-    jsr push_key
+    jsr handle_keypress
     lda #$11 ; DC1 mapped to left arrow
-    jsr push_key
+    jsr handle_keypress
 
     pla
     xba
     pla
 
-    jmp .exit_handle_keycode
+    jmp .exit_handle_scancode
 
 .pressing_tilde:
     bit # ALTGR
@@ -197,15 +251,15 @@ handle_keycode:
     pha
 
     lda #$7e ; ~ char
-    jsr push_key
+    jsr handle_keypress
     lda #$11 ; DC1 mapped to left arrow
-    jsr push_key
+    jsr handle_keypress
 
     pla
     xba
     pla
 
-    jmp .exit_handle_keycode
+    jmp .exit_handle_scancode
 
 .pressing_grave_accent:
     bit # ALTGR
@@ -217,34 +271,34 @@ handle_keycode:
     pha
 
     lda #$60 ; ` char
-    jsr push_key
+    jsr handle_keypress
     lda #$11 ; DC1 mapped to left arrow
-    jsr push_key
+    jsr handle_keypress
 
     pla
     xba
     pla
 
-    jmp .exit_handle_keycode
+    jmp .exit_handle_scancode
 
 .pressing_printable_key:
     bit # ALTGR
-    bne .map_keycode_to_altgr_key
+    bne .map_scancode_to_altgr_key
     bit # SHIFT_LEFT
-    bne .map_keycode_to_shifted_key
+    bne .map_scancode_to_shifted_key
     bit # SHIFT_RIGHT
-    bne .map_keycode_to_shifted_key
+    bne .map_scancode_to_shifted_key
 
     xba
 
     bit # CIRCUMFLEX
-    bne .map_keycode_to_circumflex_key
+    bne .map_scancode_to_circumflex_key
     bit # DIAERESIS
-    bne .map_keycode_to_diaeresis_key
+    bne .map_scancode_to_diaeresis_key
     bit # TILDE
-    bne .map_keycode_to_tilde_key
+    bne .map_scancode_to_tilde_key
     bit # GRAVE_ACCENT
-    bne .map_keycode_to_grave_accent_key
+    bne .map_scancode_to_grave_accent_key
 
     xba
 
@@ -253,17 +307,17 @@ handle_keycode:
     pha
 
     lda keymap, x ; convert scancode to char
-    jsr push_key
+    jsr handle_keypress
 
     pla
     xba
     pla
 
-    jmp .exit_handle_keycode
+    jmp .exit_handle_scancode
 
 ; TODO: for dead keys, the combination not working should shift cursor right again and revert to non dead key mode (print original key without flag)
 
-.map_keycode_to_circumflex_key:
+.map_scancode_to_circumflex_key:
     and # $ff & !CIRCUMFLEX
     xba
 
@@ -272,15 +326,15 @@ handle_keycode:
     pha
 
     lda keymap_circumflex, x ; convert scancode to char with shift
-    jsr push_key
+    jsr handle_keypress
 
     pla
     xba
     pla
 
-    jmp .exit_handle_keycode
+    jmp .exit_handle_scancode
 
-.map_keycode_to_diaeresis_key:
+.map_scancode_to_diaeresis_key:
     and # $ff & !DIAERESIS
     xba
 
@@ -289,15 +343,15 @@ handle_keycode:
     pha
 
     lda keymap_diaeresis, x ; convert scancode to char with shift
-    jsr push_key
+    jsr handle_keypress
 
     pla
     xba
     pla
 
-    jmp .exit_handle_keycode
+    jmp .exit_handle_scancode
 
-.map_keycode_to_tilde_key:
+.map_scancode_to_tilde_key:
     and # $ff & !TILDE
     xba
 
@@ -306,15 +360,15 @@ handle_keycode:
     pha
 
     lda keymap_tilde, x ; convert scancode to char with shift
-    jsr push_key
+    jsr handle_keypress
 
     pla
     xba
     pla
 
-    jmp .exit_handle_keycode
+    jmp .exit_handle_scancode
 
-.map_keycode_to_grave_accent_key:
+.map_scancode_to_grave_accent_key:
     and # $ff & !GRAVE_ACCENT
     xba
 
@@ -323,15 +377,15 @@ handle_keycode:
     pha
 
     lda keymap_grave_accent, x ; convert scancode to char with shift
-    jsr push_key
+    jsr handle_keypress
 
     pla
     xba
     pla
 
-    jmp .exit_handle_keycode
+    jmp .exit_handle_scancode
 
-.map_keycode_to_altgr_key:
+.map_scancode_to_altgr_key:
     ; no deadkeys work with altgr so we can just clear this instead of testing the flags
     ; TODO: handle shift+altgr
     pha
@@ -340,25 +394,25 @@ handle_keycode:
     pha
 
     lda keymap_altgr, x ; convert scancode to char with shift
-    jsr push_key
+    jsr handle_keypress
 
     pla
     xba
     pla
 
-    jmp .exit_handle_keycode
+    jmp .exit_handle_scancode
 
-.map_keycode_to_shifted_key:
+.map_scancode_to_shifted_key:
     xba
 
     bit # CIRCUMFLEX
-    bne .map_keycode_to_shifted_circumflex_key
+    bne .map_scancode_to_shifted_circumflex_key
     bit # DIAERESIS
-    bne .map_keycode_to_shifted_diaeresis_key
+    bne .map_scancode_to_shifted_diaeresis_key
     bit # TILDE
-    bne .map_keycode_to_shifted_tilde_key
+    bne .map_scancode_to_shifted_tilde_key
     bit # GRAVE_ACCENT
-    bne .map_keycode_to_shifted_grave_accent_key
+    bne .map_scancode_to_shifted_grave_accent_key
 
     xba
 
@@ -367,15 +421,15 @@ handle_keycode:
     pha
 
     lda keymap_shifted, x ; convert scancode to char with shift
-    jsr push_key
+    jsr handle_keypress
 
     pla
     xba
     pla
 
-    jmp .exit_handle_keycode
+    jmp .exit_handle_scancode
 
-.map_keycode_to_shifted_diaeresis_key:
+.map_scancode_to_shifted_diaeresis_key:
     and # $ff & !DIAERESIS
     xba
 
@@ -384,15 +438,15 @@ handle_keycode:
     pha
 
     lda keymap_diaeresis_shifted, x ; convert scancode to char with diaeresis + shift
-    jsr push_key
+    jsr handle_keypress
 
     pla
     xba
     pla
 
-    jmp .exit_handle_keycode
+    jmp .exit_handle_scancode
 
-.map_keycode_to_shifted_circumflex_key:
+.map_scancode_to_shifted_circumflex_key:
     and # $ff & !CIRCUMFLEX
     xba
 
@@ -401,15 +455,15 @@ handle_keycode:
     pha
 
     lda keymap_circumflex_shifted, x ; convert scancode to char with circumflex + shift
-    jsr push_key
+    jsr handle_keypress
 
     pla
     xba
     pla
 
-    jmp .exit_handle_keycode
+    jmp .exit_handle_scancode
 
-.map_keycode_to_shifted_tilde_key:
+.map_scancode_to_shifted_tilde_key:
     and # $ff & !TILDE
     xba
 
@@ -418,15 +472,15 @@ handle_keycode:
     pha
 
     lda keymap_tilde_shifted, x ; convert scancode to char with tilde + shift
-    jsr push_key
+    jsr handle_keypress
 
     pla
     xba
     pla
 
-    jmp .exit_handle_keycode
+    jmp .exit_handle_scancode
 
-.map_keycode_to_shifted_grave_accent_key:
+.map_scancode_to_shifted_grave_accent_key:
     and # $ff & !GRAVE_ACCENT
     xba
 
@@ -435,10 +489,10 @@ handle_keycode:
     pha
 
     lda keymap_grave_accent_shifted, x ; convert scancode to char with grave accent + shift
-    jsr push_key
+    jsr handle_keypress
 
     pla
     xba
     pla
 
-    jmp .exit_handle_keycode
+    jmp .exit_handle_scancode

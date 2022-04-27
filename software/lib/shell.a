@@ -57,4 +57,6 @@ handle_keypress:
     lda # LCD_CMD_SHIFT_CURSOR_LEFT
     jsr lcd_instruction
 
+    ; TODO: don't go left if at beginning of line
+
     jmp .exit_handle_keypress
