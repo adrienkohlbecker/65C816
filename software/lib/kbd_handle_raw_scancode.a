@@ -1,4 +1,5 @@
-; kbd_handle_raw_scancode: translate scancodes sent by the keyboard from Set 2 to Set 3. Forwards it to kbd_handle_scancode
+; kbd_handle_raw_scancode: translate scancodes sent by the keyboard from Set 2 to Set 3. Forwards it to kbd_handle_key_release
+;                          and kbd_handle_key_press
 ; argument: A=incoming scancode
 kbd_handle_raw_scancode:
     tax                                 ; load kb_flags into A, scancode into X
