@@ -7,6 +7,9 @@
 !macro alloc_zp ~.address, .amount {
     !address .address = $ff & zero_page_pointer
     !set zero_page_pointer = zero_page_pointer + .amount
+    !if zero_page_pointer > $ff {
+      !error "out of zero page addresses"
+    }
 }
 
 ; alloc_mem: allocate a given amount of bytes in general purpose memory
@@ -15,4 +18,7 @@
 !macro alloc_mem ~.address, .amount {
     !address .address = gp_memory_pointer
     !set gp_memory_pointer = gp_memory_pointer + .amount
+    !if gp_memory_pointer > $7f7f {
+      !error "out of memory addresses"
+    }
 }
