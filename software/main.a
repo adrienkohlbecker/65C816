@@ -95,13 +95,13 @@ VIA_DDRB_DEFAULT = $00 ; all inputs
 
 *=$8000
 main:
-  ; put CPU in native mode
-  clc
-  xce
-
   ; initialize stack pointer to 01FF
   ldx #$ff
   txs
+
+  ; put CPU in native mode
+  clc
+  xce
 
   ; select 8 bit registers
   sep #%00110000
